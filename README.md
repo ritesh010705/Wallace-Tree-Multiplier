@@ -1,25 +1,50 @@
-# Wallace-Tree-Multiplier
-# High-Speed Wallace Tree Multiplier (Verilog HDL)
+# Analysis of Wallace Multipliers: Variations, Area, Delay & Power Evaluation
 
-![Verilog](https://img.shields.io/badge/Language-Verilog%20HDL-blue.svg)
-![EDA Tools](https://img.shields.io/badge/EDA-ModelSim%20%7C%20Xilinx%20Vivado%20%7C%20Cadence-orange.svg)
-![Design Type](https://img.shields.io/badge/Architecture-Tree%20Multiplier-brightgreen.svg)
-![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)
+[![Verilog HDL](https://img.shields.io/badge/Language-Verilog%20HDL-blue.svg)](https://en.wikipedia.org/wiki/Verilog)
+[![PDK](https://img.shields.io/badge/PDK-SkyWater%20130nm-green.svg)](https://github.com/google/skywater-pdk)
+[![Synthesis](https://img.shields.io/badge/Synthesis-Yosys-orange.svg)](https://github.com/YosysHQ/yosys)
+[![Backend Flow](https://img.shields.io/badge/Flow-OpenLANE%20%7C%20OpenROAD-purple.svg)](https://github.com/The-OpenROAD-Project/OpenLane)
+[![Verification](https://img.shields.io/badge/Sim-ModelSim-red.svg)](https://www.intel.com/content/www/us/en/software/programmable/quartus-prime/model-simulation.html)
 
-An RTL implementation of a high-speed **Wallace Tree Multiplier** designed in Verilog HDL. This project demonstrates column-compression arithmetic reduction using Carry-Save Addition (CSA) trees, minimizing propagation delay from $O(N)$ (linear array) down to $O(\log_{1.5} N)$.
+This repository contains Register-Transfer Level (RTL) implementations, verification testbenches, and synthesis benchmarks for three architectural topologies of the **Wallace Tree Multiplier**:
+1. **Conventional Wallace Tree Multiplier** (Full Adder / Half Adder based)
+2. **Reduced-Complexity Wallace Tree Multiplier (RCWM)** (Inverted-pyramid scheduling)
+3. **Compressor-Based Wallace Tree Multiplier** (Utilizing higher-order 4:2 compressor cells)
+
+All designs were synthesized and characterized using **Yosys**, **OpenSTA**, and the **OpenLANE** automated RTL-to-GDSII flow targeting the **SkyWater 130 nm (`sky130_fd_sc_hd`)** standard-cell library.
 
 ---
 
-## 📌 Architectural Overview
+## 📌 Architectural Variants
 
-Standard array multipliers accumulate partial products linearly, accumulating delay with each row. The **Wallace Tree Multiplier** optimizes partial-product reduction into three distinct phases:
+### 1. Conventional Wallace Tree Multiplier (`Wallace_summer`)
+- **Reduction Scheme:** Classical multi-pass column compression utilizing standard full adders (3:2) and half adders (2:2).
+- **Characteristics:** Achieves high parallel speedup over array multipliers, but introduces wiring irregularity and a high half-adder count.
 
-1. **Partial Product Generation (PPG):**  
-   Simultaneous generation of $N \times N$ partial product bits via parallel bitwise `AND` gates ($a_i \cdot b_j$).
-2. **Partial Product Reduction Tree (PPRT):**  
-   Iterative column reduction using carry-save arithmetic:
-   - **Full Adders (3:2 Compressors):** Compresses three bits of weight $2^k$ into one sum bit of weight $2^k$ and one carry bit of weight $2^{k+1}$.
-   - **Half Adders (2:2 Compressors):** Compresses two bits of weight $2^k$ into one sum bit and one carry bit.
-   - Operations occur concurrently without cross-column carry ripple.
-3. **Vector Merge / Final Addition (CPA):**  
-   The final pair of accumulated sum and carry vectors are added using a high-speed Carry-Propagate Adder (e.g., Carry Lookahead Adder / CLA or Carry-Select Adder) to produce the final $2N$-bit product.
+### 2. Reduced-Complexity Wallace Multiplier (`RCWM`)
+- **Reduction Scheme:** Inverted-pyramid reduction schedule prioritizing 3:2 full-adder groupings and minimizing half-adder instantiation in intermediate layers.
+- **Characteristics:** Enhances interconnect regularity and reduces spurious transitions/glitching, minimizing overall dynamic power dissipation at a modest area trade-off.
+
+### 3. Compressor-Based Multiplier (`wallace_tree_4x4`)
+- **Reduction Scheme:** Leverages modular **4:2 compressors** chained across columns to rapidly compress vertical bit-depth.
+- **Characteristics:** Substantially contracts tree depth and gate count, lowering silicon cell area and slashing critical path delay down to sub-nanosecond scale.
+
+---
+
+## ⏱️ Synchronous Pipeline Architecture
+
+To establish an industry-standard static timing analysis (STA) baseline and evaluate true critical path performance under physical constraints, each multiplier combinational core is enclosed in a **three-stage synchronous pipeline**:
+
+```text
+       CLK
+        │
+   ┌────┴────┐          ┌───────────────────────────────────┐          ┌────┴────┐
+A ─┤ DFF (A) ├─────────►│                                   │─────────►│ DFF (P) ├─► Product (P)
+   └─────────┘          │        Combinational Core         │          └─────────┘
+   ┌─────────┐          │   (PPG + Column Reduction Tree)   │
+B ─┤ DFF (B) ├─────────►│                                   │
+   └─────────┘          └───────────────────────────────────┘
+ Stage 1 (Inputs)                 Stage 2 (Compute)                   Stage 3 (Outputs)
+
+##perfromance analysis report ##
+<img width="756" height="532" alt="image" src="https://github.com/user-attachments/assets/34b9ddca-5cae-4740-bc4c-495cb7335c6f" />
