@@ -1,0 +1,101 @@
+module compressor_4_2 (
+ input wire x0, x1, x2, x3, cin,
+ output wire sum, cout, carry
+);
+ wire fa1_sum;
+ assign fa1_sum = x0 ^ x1 ^ x2;
+ assign carry = (x0 & x1) | (x1 & x2) | (x0 & x2); // FA1 carry
+ assign sum = fa1_sum ^ x3 ^ cin;
+20
+ assign cout = (fa1_sum & x3) | (x3 & cin) | (fa1_sum & cin); // FA2 carry
+endmodule
+module full_adder (
+ input wire a, b, cin,
+ output wire sum, cout
+);
+ assign sum = a ^ b ^ cin;
+ assign cout = (a & b) | (b & cin) | (a & cin);
+endmodule
+module half_adder (
+ input wire a, b,
+ output wire sum, cout
+);
+ assign sum = a ^ b;
+ assign cout = a & b;
+endmodule
+module wallace_tree_4x4 (
+ input wire [3:0] A,
+ input wire [3:0] B,
+ output wire [7:0] P
+);
+ // ---- Partial products ----
+ wire p00, p01, p02, p03;
+ wire p10, p11, p12, p13;
+ wire p20, p21, p22, p23;
+ wire p30, p31, p32, p33;
+ assign p00 = A[0] & B[0];
+ assign p01 = A[0] & B[1]; assign p10 = A[1] & B[0];
+ assign p02 = A[0] & B[2]; assign p11 = A[1] & B[1]; assign p20 = A[2] & B[0];
+ assign p03 = A[0] & B[3]; assign p12 = A[1] & B[2]; assign p21 = A[2] & B[1]; assign p30 = A[3] & B[0];
+ assign p13 = A[1] & B[3]; assign p22 = A[2] & B[2]; assign p31 = A[3] & B[1];
+ assign p23 = A[2] & B[3]; assign p32 = A[3] & B[2];
+ assign p33 = A[3] & B[3];
+ // ---- Pass 1: three FAs on cols 2, 3, 4 ----
+ wire FA1s, FA1co;
+ wire FA2s, FA2co;
+ wire FA3s, FA3co;
+ full_adder FA1 (.a(p20), .b(p11), .cin(p02), .sum(FA1s), .cout(FA1co)); // col2→col3
+ full_adder FA2 (.a(p30), .b(p21), .cin(p12), .sum(FA2s), .cout(FA2co)); // col3→col4
+ full_adder FA3 (.a(p31), .b(p22), .cin(p13), .sum(FA3s), .cout(FA3co)); // col4→col5
+wire FA4s, FA4co;
+ wire FA5s, FA5co;
+ full_adder FA4 (.a(FA2s), .b(p03), .cin(FA1co), .sum(FA4s), .cout(FA4co)); // col3→col4
+ full_adder FA5 (.a(p32), .b(p23), .cin(FA3co), .sum(FA5s), .cout(FA5co)); // col5→col6
+ // ---- Pass 3: one FA absorbs pass-2 carries ----
+ wire FA6s, FA6co;
+ full_adder FA6 (.a(FA3s), .b(FA2co), .cin(FA4co), .sum(FA6s), .cout(FA6co)); // col4→col5
+ // ---- Half adders on remaining 2-bit columns ----
+ wire HA1s, HA1co; // col1: (p10, p01) → HA1co goes to col2
+ wire HA2s, HA2co; // col2: (FA1s, HA1co) → HA2co goes to col3
+ wire HA3s, HA3co; // col5: (FA5s, FA6co) → HA3co goes to col6
+ wire HA4s, HA4co; // col6: (p33, FA5co) → HA4co goes to col7
+ half_adder HA1 (.a(p10), .b(p01), .sum(HA1s), .cout(HA1co));
+ half_adder HA2 (.a(FA1s), .b(HA1co),.sum(HA2s), .cout(HA2co));
+ half_adder HA3 (.a(FA5s), .b(FA6co),.sum(HA3s), .cout(HA3co));
+ half_adder HA4 (.a(p33), .b(FA5co),.sum(HA4s), .cout(HA4co))
+
+wire [7:0] row_s = {1'b0, HA4s, HA3s, FA6s, FA4s, HA2s, HA1s, p00};
+ wire [7:0] row_c = {HA4co, HA3co, 1'b0, 1'b0, HA2co, 1'b0, 1'b0, 1'b0};
+ assign P = row_s + row_c;
+endmodule
+
+
+// ================================================================
+// Testbench — exhaustive 4x4 (256 cases)
+// ================================================================
+`timescale 1ns/1ps
+module tb_wallace_tree_4x4;
+ reg [3:0] A, B;
+ wire [7:0] P;
+ integer i, j, errors;
+ wallace_tree_4x4 dut (.A(A), .B(B), .P(P));
+ initial begin
+ errors = 0;
+ for (i = 0; i < 16; i = i + 1) begin
+ for (j = 0; j < 16; j = j + 1) begin
+ A = i[3:0];
+ B = j[3:0];
+ #10;
+ if (P !== (i * j)) begin
+ $display("FAIL: %0d x %0d = %0d (expected %0d)", i, j, P, i*j);
+ errors = errors + 1;
+ end
+ end
+ end
+ if (errors == 0)
+ $display("ALL 256 TEST CASES PASSED");
+ else
+ $display("%0d ERRORS FOUND", errors);
+ $finish;
+ end
+endmodule
